@@ -1,0 +1,4 @@
+# Image Search Lambda requirements
+# boto3 is pre-installed in Lambda runtime
+
+# No additional requirements needed!

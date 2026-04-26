@@ -1,0 +1,6 @@
+# Image Processor Lambda requirements
+# Note: boto3 is included in Lambda runtime
+# Only add if you need specific versions
+
+# No additional requirements needed!
+# Using AWS SDK (boto3) which is pre-installed in Lambda
