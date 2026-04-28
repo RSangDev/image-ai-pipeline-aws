@@ -1,0 +1,437 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Image AI Processing Pipeline - Rekognition + Lambda + DynamoDB
+Parameters:
+  ProjectName:
+    Type: String
+    Default: image-ai-pipeline
+    Description: Project name for resource naming
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for content moderation alerts (optional)
+Resources:
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Sub: ${ProjectName}-images-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+        - AllowedHeaders:
+          - '*'
+          AllowedMethods:
+          - GET
+          - PUT
+          - POST
+          - DELETE
+          AllowedOrigins:
+          - '*'
+          MaxAge: 3000
+      NotificationConfiguration:
+        LambdaConfigurations:
+        - Event: s3:ObjectCreated:*
+          Function:
+            Fn::GetAtt:
+            - ImageProcessorFunction
+            - Arn
+          Filter:
+            S3Key:
+              Rules:
+              - Name: suffix
+                Value: .jpg
+        - Event: s3:ObjectCreated:*
+          Function:
+            Fn::GetAtt:
+            - ImageProcessorFunction
+            - Arn
+          Filter:
+            S3Key:
+              Rules:
+              - Name: suffix
+                Value: .png
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: ${ProjectName}-metadata
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: image_id
+        AttributeType: S
+      KeySchema:
+      - AttributeName: image_id
+        KeyType: HASH
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  ModerationAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Sub: ${ProjectName}-moderation-alerts
+      DisplayName: Content Moderation Alerts
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  ImageProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: ImageProcessorPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:HeadObject
+            Resource:
+              Fn::Sub: ${ImagesBucket.Arn}/*
+          - Effect: Allow
+            Action:
+            - rekognition:DetectLabels
+            - rekognition:DetectFaces
+            - rekognition:DetectText
+            - rekognition:DetectModerationLabels
+            - rekognition:RecognizeCelebrities
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - dynamodb:PutItem
+            Resource:
+              Fn::GetAtt:
+              - MetadataTable
+              - Arn
+          - Effect: Allow
+            Action:
+            - sns:Publish
+            Resource:
+              Ref: ModerationAlertTopic
+  ImageProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${ProjectName}-processor
+      Runtime: python3.11
+      Handler: handler.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - ImageProcessorRole
+        - Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          METADATA_TABLE:
+            Ref: MetadataTable
+          ALERT_TOPIC_ARN:
+            Ref: ModerationAlertTopic
+      Code:
+        ZipFile: "import json\ndef lambda_handler(event, context):\n    return {'statusCode':\
+          \ 200, 'body': json.dumps('Deploy your code!')}\n"
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  ImageProcessorS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ImageProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - ImagesBucket
+        - Arn
+  ImageSearchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: ImageSearchPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:Scan
+            - dynamodb:Query
+            Resource:
+              Fn::GetAtt:
+              - MetadataTable
+              - Arn
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+              Fn::Sub: ${ImagesBucket.Arn}/*
+  ImageSearchFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${ProjectName}-search
+      Runtime: python3.11
+      Handler: handler.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - ImageSearchRole
+        - Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          METADATA_TABLE:
+            Ref: MetadataTable
+          IMAGES_BUCKET:
+            Ref: ImagesBucket
+      Code:
+        ZipFile: "import json\ndef lambda_handler(event, context):\n    return {'statusCode':\
+          \ 200, 'body': json.dumps('Deploy your code!')}\n"
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  SearchApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name:
+        Fn::Sub: ${ProjectName}-api
+      Description: Image Search API
+      EndpointConfiguration:
+        Types:
+        - REGIONAL
+  SearchResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+        - SearchApi
+        - RootResourceId
+      PathPart: search
+      RestApiId:
+        Ref: SearchApi
+  ImageResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+        - SearchApi
+        - RootResourceId
+      PathPart: image
+      RestApiId:
+        Ref: SearchApi
+  ImageIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: ImageResource
+      PathPart: '{id}'
+      RestApiId:
+        Ref: SearchApi
+  StatsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+        - SearchApi
+        - RootResourceId
+      PathPart: stats
+      RestApiId:
+        Ref: SearchApi
+  SearchMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId:
+        Ref: SearchResource
+      RestApiId:
+        Ref: SearchApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Sub: 
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageSearchFunction.Arn}/invocations
+  GetImageMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId:
+        Ref: ImageIdResource
+      RestApiId:
+        Ref: SearchApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Sub: 
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageSearchFunction.Arn}/invocations
+  StatsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId:
+        Ref: StatsResource
+      RestApiId:
+        Ref: SearchApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Sub: 
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageSearchFunction.Arn}/invocations
+  SearchApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ImageSearchFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: 
+          arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SearchApi}/*
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+    - SearchMethod
+    - GetImageMethod
+    - StatsMethod
+    Properties:
+      RestApiId:
+        Ref: SearchApi
+      StageName: prod
+  ModerationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: ModerationPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ses:SendEmail
+            Resource: '*'
+  ModerationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${ProjectName}-moderation
+      Runtime: python3.11
+      Handler: handler.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - ModerationRole
+        - Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          METADATA_TABLE:
+            Ref: MetadataTable
+          ALERT_EMAIL:
+            Ref: AlertEmail
+      Code:
+        ZipFile: "import json\ndef lambda_handler(event, context):\n    return {'statusCode':\
+          \ 200, 'body': json.dumps('Deploy your code!')}\n"
+      Tags:
+      - Key: Project
+        Value:
+          Ref: ProjectName
+  ModerationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn:
+        Ref: ModerationAlertTopic
+      Endpoint:
+        Fn::GetAtt:
+        - ModerationFunction
+        - Arn
+  ModerationSNSPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ModerationFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: ModerationAlertTopic
+Outputs:
+  ImagesBucketName:
+    Description: S3 bucket for image uploads
+    Value:
+      Ref: ImagesBucket
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-bucket
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value:
+      Fn::Sub: 
+        https://${SearchApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-api-endpoint
+  MetadataTableName:
+    Description: DynamoDB metadata table
+    Value:
+      Ref: MetadataTable
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-table
+  ProcessorFunctionName:
+    Description: Image processor Lambda function
+    Value:
+      Ref: ImageProcessorFunction
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-processor
+  SearchFunctionName:
+    Description: Image search Lambda function
+    Value:
+      Ref: ImageSearchFunction
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-search
+  UploadCommand:
+    Description: AWS CLI command to upload images
+    Value:
+      Fn::Sub: aws s3 cp your-image.jpg s3://${ImagesBucket}/
