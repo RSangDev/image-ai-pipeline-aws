@@ -1,0 +1,23 @@
+﻿Image AI Pipeline - Deployment Info
+====================================
+
+Deployed: 04/28/2026 15:15:37
+Stack Name: image-ai-pipeline-stack
+AWS Region: us-east-2
+
+API Endpoint: https://roab7uz4v7.execute-api.us-east-2.amazonaws.com/prod
+Images Bucket: image-ai-pipeline-images-211854352436
+Processor Function: image-ai-pipeline-processor
+Search Function: image-ai-pipeline-search
+
+Upload Command:
+aws s3 cp your-image.jpg s3://image-ai-pipeline-images-211854352436/
+
+Dashboard Config:
+- API Endpoint: https://roab7uz4v7.execute-api.us-east-2.amazonaws.com/prod
+- S3 Bucket: image-ai-pipeline-images-211854352436
+
+Rekognition Info:
+- Free Tier: 5,000 images/month
+- After: $0.001 per image
+- Features: Labels, Faces, Text, Moderation, Celebrities

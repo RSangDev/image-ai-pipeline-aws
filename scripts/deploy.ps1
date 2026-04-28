@@ -111,6 +111,9 @@ try {
     exit 1
 }
 
+Write-Host "StackName: $StackName"
+Write-Host "Region: $Region"
+
 Write-Host ""
 Write-Host "Step 5: Updating Lambda function codes..." -ForegroundColor Yellow
 
@@ -118,7 +121,9 @@ Write-Host "Step 5: Updating Lambda function codes..." -ForegroundColor Yellow
 $outputs = aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
-    --query 'Stacks[0].Outputs' 2>&1 | ConvertFrom-Json
+    --query 'Stacks[0].Outputs' `
+    --output json | ConvertFrom-Json
+#    --query 'Stacks[0].Outputs' 2>&1 | ConvertFrom-Json
 
 $processorFunction = ($outputs | Where-Object { $_.OutputKey -eq "ProcessorFunctionName" }).OutputValue
 $searchFunction = ($outputs | Where-Object { $_.OutputKey -eq "SearchFunctionName" }).OutputValue

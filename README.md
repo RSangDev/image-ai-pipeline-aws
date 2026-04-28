@@ -219,7 +219,7 @@ aws configure
 **Windows (PowerShell):**
 ```powershell
 # Clone repository
-git clone https://github.com/your-username/image-ai-pipeline-aws.git
+git clone https://github.com/RSangDev/image-ai-pipeline-aws.git
 cd image-ai-pipeline-aws
 
 # Deploy everything
@@ -232,7 +232,7 @@ cd image-ai-pipeline-aws
 **Mac/Linux (Bash):**
 ```bash
 # Clone repository
-git clone https://github.com/your-username/image-ai-pipeline-aws.git
+git clone https://github.com/RSangDev/image-ai-pipeline-aws.git
 cd image-ai-pipeline-aws
 
 # Make scripts executable
@@ -316,7 +316,7 @@ The Streamlit dashboard provides:
 
 ### Base URL
 ```
-https://YOUR-API-ID.execute-api.us-east-2.amazonaws.com/prod
+https://tl22hztl73.execute-api.us-east-2.amazonaws.com/prod/health
 ```
 
 ### Endpoints
@@ -484,7 +484,7 @@ Contributions welcome! Please:
 
 Questions? Issues? Suggestions?
 
-- **GitHub Issues:** [Open an issue](https://github.com/your-username/image-ai-pipeline-aws/issues)
+- **GitHub Issues:** [Open an issue](https://github.com/RSangDev/image-ai-pipeline-aws/issues)
 - **Email:** your.email@example.com
 
 ---
