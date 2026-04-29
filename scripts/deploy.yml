@@ -1,0 +1,99 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y zip
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Package Lambda functions
+        run: |
+          cd lambda/image-processor && zip function.zip handler.py && cd ../..
+          cd lambda/image-search && zip function.zip handler.py && cd ../..
+          cd lambda/content-moderation && zip function.zip handler.py && cd ../..
+      
+      - name: Create deployment bucket
+        run: |
+          BUCKET="image-ai-pipeline-deploy-$(date +%s)"
+          echo "BUCKET=$BUCKET" >> $GITHUB_ENV
+          aws s3 mb "s3://$BUCKET" --region us-east-2 || true
+      
+      - name: Package CloudFormation template
+        run: |
+          aws cloudformation package \
+            --template-file cloudformation/template.yaml \
+            --s3-bucket $BUCKET \
+            --output-template-file packaged-template.yaml \
+            --region us-east-2
+      
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --template-file packaged-template.yaml \
+            --stack-name image-ai-pipeline-stack \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides ProjectName=image-ai-pipeline \
+            --region us-east-2
+      
+      - name: Update Lambda functions
+        run: |
+          PROCESSOR=$(aws cloudformation describe-stacks \
+            --stack-name image-ai-pipeline-stack \
+            --query 'Stacks[0].Outputs[?OutputKey==`ProcessorFunctionName`].OutputValue' \
+            --output text --region us-east-2)
+          
+          SEARCH=$(aws cloudformation describe-stacks \
+            --stack-name image-ai-pipeline-stack \
+            --query 'Stacks[0].Outputs[?OutputKey==`SearchFunctionName`].OutputValue' \
+            --output text --region us-east-2)
+          
+          aws lambda update-function-code \
+            --function-name $PROCESSOR \
+            --zip-file fileb://lambda/image-processor/function.zip \
+            --region us-east-2
+          
+          aws lambda update-function-code \
+            --function-name $SEARCH \
+            --zip-file fileb://lambda/image-search/function.zip \
+            --region us-east-2
+      
+      - name: Configure S3 event notifications
+        run: ./scripts/configure-s3-events.sh image-ai-pipeline
+      
+      - name: Get API endpoint
+        id: get-endpoint
+        run: |
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name image-ai-pipeline-stack \
+            --region us-east-2 \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+            --output text)
+          echo "API_ENDPOINT=$API_ENDPOINT" >> $GITHUB_ENV
+          echo "::notice::API Endpoint: $API_ENDPOINT"
+      
+      - name: Test API health
+        run: |
+          echo "Testing API endpoint: $API_ENDPOINT"
+          curl -f "$API_ENDPOINT/stats" || echo "API not ready yet (expected on first deploy)"
