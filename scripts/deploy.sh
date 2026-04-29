@@ -137,7 +137,16 @@ aws lambda update-function-code \
 echo -e "${GREEN}✓${NC} Lambda functions updated"
 
 echo ""
-echo "📊 Step 6: Retrieving outputs..."
+echo "🔗 Step 6: Configuring S3 event notifications..."
+
+# Make script executable
+chmod +x scripts/configure-s3-events.sh
+
+# Run configuration
+./scripts/configure-s3-events.sh "$PROJECT_NAME"
+
+echo ""
+echo "📊 Step 7: Retrieving outputs..."
 
 OUTPUTS=$(aws cloudformation describe-stacks \
     --stack-name "$STACK_NAME" \

@@ -111,9 +111,6 @@ try {
     exit 1
 }
 
-Write-Host "StackName: $StackName"
-Write-Host "Region: $Region"
-
 Write-Host ""
 Write-Host "Step 5: Updating Lambda function codes..." -ForegroundColor Yellow
 
@@ -121,9 +118,7 @@ Write-Host "Step 5: Updating Lambda function codes..." -ForegroundColor Yellow
 $outputs = aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
-    --query 'Stacks[0].Outputs' `
-    --output json | ConvertFrom-Json
-#    --query 'Stacks[0].Outputs' 2>&1 | ConvertFrom-Json
+    --query 'Stacks[0].Outputs' 2>&1 | ConvertFrom-Json
 
 $processorFunction = ($outputs | Where-Object { $_.OutputKey -eq "ProcessorFunctionName" }).OutputValue
 $searchFunction = ($outputs | Where-Object { $_.OutputKey -eq "SearchFunctionName" }).OutputValue
@@ -145,7 +140,66 @@ aws lambda update-function-code `
 Write-Host "[OK] Lambda functions updated" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "Step 6: Retrieving outputs..." -ForegroundColor Yellow
+Write-Host "Step 6: Configuring S3 event notifications..." -ForegroundColor Yellow
+
+# Get Lambda ARN
+$lambdaArn = aws lambda get-function `
+    --function-name $processorFunction `
+    --query 'Configuration.FunctionArn' `
+    --output text `
+    --region $Region
+
+# Create notification configuration
+$notificationConfig = @"
+{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "ImageProcessorJPG",
+      "LambdaFunctionArn": "$lambdaArn",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".jpg"}]
+        }
+      }
+    },
+    {
+      "Id": "ImageProcessorJPEG",
+      "LambdaFunctionArn": "$lambdaArn",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".jpeg"}]
+        }
+      }
+    },
+    {
+      "Id": "ImageProcessorPNG",
+      "LambdaFunctionArn": "$lambdaArn",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".png"}]
+        }
+      }
+    }
+  ]
+}
+"@
+
+$notificationConfig | Out-File -FilePath s3-notification.json -Encoding UTF8
+
+aws s3api put-bucket-notification-configuration `
+    --bucket $imagesBucket `
+    --notification-configuration file://s3-notification.json `
+    --region $Region 2>&1 | Out-Null
+
+Remove-Item s3-notification.json
+
+Write-Host "[OK] S3 event notifications configured" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "Step 7: Retrieving outputs..." -ForegroundColor Yellow
 
 $apiEndpoint = ($outputs | Where-Object { $_.OutputKey -eq "ApiEndpoint" }).OutputValue
 $imagesBucket = ($outputs | Where-Object { $_.OutputKey -eq "ImagesBucketName" }).OutputValue

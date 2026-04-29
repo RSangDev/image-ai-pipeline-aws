@@ -16,7 +16,6 @@ Resources:
   # S3 Bucket for Images
   ImagesBucket:
     Type: AWS::S3::Bucket
-    DependsOn: ImageProcessorS3Permission
     Properties:
       BucketName: !Sub '${ProjectName}-images-${AWS::AccountId}'
       CorsConfiguration:
@@ -25,22 +24,8 @@ Resources:
             AllowedMethods: [GET, PUT, POST, DELETE]
             AllowedOrigins: ['*']
             MaxAge: 3000
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt ImageProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .jpg
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt ImageProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .png
+      # Note: NotificationConfiguration is added via configure-s3-events.sh script
+      # This avoids circular dependency issues with Lambda
       Tags:
         - Key: Project
           Value: !Ref ProjectName
