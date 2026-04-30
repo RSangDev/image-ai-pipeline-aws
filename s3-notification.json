@@ -1,0 +1,34 @@
+﻿{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "ImageProcessorJPG",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-2:211854352436:function:image-ai-pipeline-processor",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".jpg"}]
+        }
+      }
+    },
+    {
+      "Id": "ImageProcessorJPEG",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-2:211854352436:function:image-ai-pipeline-processor",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".jpeg"}]
+        }
+      }
+    },
+    {
+      "Id": "ImageProcessorPNG",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-2:211854352436:function:image-ai-pipeline-processor",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [{"Name": "suffix", "Value": ".png"}]
+        }
+      }
+    }
+  ]
+}

@@ -12,7 +12,6 @@ Parameters:
 Resources:
   ImagesBucket:
     Type: AWS::S3::Bucket
-    DependsOn: ImageProcessorS3Permission
     Properties:
       BucketName:
         Fn::Sub: ${ProjectName}-images-${AWS::AccountId}
@@ -28,28 +27,6 @@ Resources:
           AllowedOrigins:
           - '*'
           MaxAge: 3000
-      NotificationConfiguration:
-        LambdaConfigurations:
-        - Event: s3:ObjectCreated:*
-          Function:
-            Fn::GetAtt:
-            - ImageProcessorFunction
-            - Arn
-          Filter:
-            S3Key:
-              Rules:
-              - Name: suffix
-                Value: .jpg
-        - Event: s3:ObjectCreated:*
-          Function:
-            Fn::GetAtt:
-            - ImageProcessorFunction
-            - Arn
-          Filter:
-            S3Key:
-              Rules:
-              - Name: suffix
-                Value: .png
       Tags:
       - Key: Project
         Value:

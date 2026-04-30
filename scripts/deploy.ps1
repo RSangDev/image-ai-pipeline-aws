@@ -142,61 +142,109 @@ Write-Host "[OK] Lambda functions updated" -ForegroundColor Green
 Write-Host ""
 Write-Host "Step 6: Configuring S3 event notifications..." -ForegroundColor Yellow
 
-# Get Lambda ARN
-$lambdaArn = aws lambda get-function `
-    --function-name $processorFunction `
-    --query 'Configuration.FunctionArn' `
-    --output text `
-    --region $Region
-
-# Create notification configuration
-$notificationConfig = @"
-{
-  "LambdaFunctionConfigurations": [
-    {
-      "Id": "ImageProcessorJPG",
-      "LambdaFunctionArn": "$lambdaArn",
-      "Events": ["s3:ObjectCreated:*"],
-      "Filter": {
-        "Key": {
-          "FilterRules": [{"Name": "suffix", "Value": ".jpg"}]
-        }
-      }
-    },
-    {
-      "Id": "ImageProcessorJPEG",
-      "LambdaFunctionArn": "$lambdaArn",
-      "Events": ["s3:ObjectCreated:*"],
-      "Filter": {
-        "Key": {
-          "FilterRules": [{"Name": "suffix", "Value": ".jpeg"}]
-        }
-      }
-    },
-    {
-      "Id": "ImageProcessorPNG",
-      "LambdaFunctionArn": "$lambdaArn",
-      "Events": ["s3:ObjectCreated:*"],
-      "Filter": {
-        "Key": {
-          "FilterRules": [{"Name": "suffix", "Value": ".png"}]
-        }
-      }
+try {
+    # Debug: Show all outputs
+    Write-Host "  DEBUG: Available outputs:" -ForegroundColor DarkGray
+    $outputs | ForEach-Object { Write-Host "    - $($_.OutputKey) = $($_.OutputValue)" -ForegroundColor DarkGray }
+    
+    # Get bucket name from stack outputs
+    $imagesBucket = ($outputs | Where-Object { $_.OutputKey -eq "ImagesBucketName" }).OutputValue
+    
+    if (-not $imagesBucket) {
+        Write-Host "  ERROR: Bucket name not found in outputs!" -ForegroundColor Red
+        throw "Bucket name not found in stack outputs"
     }
-  ]
+    
+    # Get Lambda ARN
+    $lambdaArn = aws lambda get-function `
+        --function-name $processorFunction `
+        --query 'Configuration.FunctionArn' `
+        --output text `
+        --region $Region 2>&1
+    
+    if (-not $lambdaArn -or $lambdaArn -like "*error*") {
+        throw "Failed to get Lambda ARN"
+    }
+    
+    Write-Host "  Bucket: $imagesBucket" -ForegroundColor Gray
+    Write-Host "  Lambda ARN: $lambdaArn" -ForegroundColor Gray
+    
+    # Create notification configuration JSON
+    $notificationConfig = @{
+        LambdaFunctionConfigurations = @(
+            @{
+                Id = "ImageProcessorJPG"
+                LambdaFunctionArn = $lambdaArn
+                Events = @("s3:ObjectCreated:*")
+                Filter = @{
+                    Key = @{
+                        FilterRules = @(
+                            @{
+                                Name = "suffix"
+                                Value = ".jpg"
+                            }
+                        )
+                    }
+                }
+            },
+            @{
+                Id = "ImageProcessorJPEG"
+                LambdaFunctionArn = $lambdaArn
+                Events = @("s3:ObjectCreated:*")
+                Filter = @{
+                    Key = @{
+                        FilterRules = @(
+                            @{
+                                Name = "suffix"
+                                Value = ".jpeg"
+                            }
+                        )
+                    }
+                }
+            },
+            @{
+                Id = "ImageProcessorPNG"
+                LambdaFunctionArn = $lambdaArn
+                Events = @("s3:ObjectCreated:*")
+                Filter = @{
+                    Key = @{
+                        FilterRules = @(
+                            @{
+                                Name = "suffix"
+                                Value = ".png"
+                            }
+                        )
+                    }
+                }
+            }
+        )
+    }
+    
+    # Convert to JSON and save
+    $jsonContent = $notificationConfig | ConvertTo-Json -Depth 10
+    $tempFile = New-TemporaryFile
+    
+    # CRITICAL: Save as UTF-8 WITHOUT BOM
+    [System.IO.File]::WriteAllText($tempFile.FullName, $jsonContent, [System.Text.UTF8Encoding]::new($false))
+    
+    # Apply configuration
+    Write-Host "  Applying notification configuration..." -ForegroundColor Gray
+    aws s3api put-bucket-notification-configuration `
+        --bucket $imagesBucket `
+        --notification-configuration "file://$($tempFile.FullName)" `
+        --region $Region
+    
+    # Cleanup
+    Remove-Item $tempFile.FullName -ErrorAction SilentlyContinue
+    
+    Write-Host "[OK] S3 event notifications configured" -ForegroundColor Green
+    
+} catch {
+    Write-Host "[WARNING] Failed to configure S3 notifications" -ForegroundColor Yellow
+    Write-Host "  Error: $_" -ForegroundColor Gray
+    Write-Host "  You can configure manually later with:" -ForegroundColor Gray
+    Write-Host "  .\scripts\configure-s3-events.ps1" -ForegroundColor Gray
 }
-"@
-
-$notificationConfig | Out-File -FilePath s3-notification.json -Encoding UTF8
-
-aws s3api put-bucket-notification-configuration `
-    --bucket $imagesBucket `
-    --notification-configuration file://s3-notification.json `
-    --region $Region 2>&1 | Out-Null
-
-Remove-Item s3-notification.json
-
-Write-Host "[OK] S3 event notifications configured" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Step 7: Retrieving outputs..." -ForegroundColor Yellow
