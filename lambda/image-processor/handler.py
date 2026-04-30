@@ -8,6 +8,7 @@ import boto3
 import os
 from datetime import datetime
 from urllib.parse import unquote_plus
+from decimal import Decimal
 import uuid
 
 # AWS Clients
@@ -19,6 +20,20 @@ sns = boto3.client('sns')
 # Environment variables
 METADATA_TABLE = os.environ.get('METADATA_TABLE', 'image-metadata')
 ALERT_TOPIC_ARN = os.environ.get('ALERT_TOPIC_ARN', '')
+
+
+def convert_floats_to_decimal(obj):
+    """
+    Recursively convert all float values to Decimal for DynamoDB
+    """
+    if isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: convert_floats_to_decimal(value) for key, value in obj.items()}
+    elif isinstance(obj, float):
+        return Decimal(str(obj))
+    else:
+        return obj
 
 
 def lambda_handler(event, context):
