@@ -297,6 +297,9 @@ def save_metadata(image_id, bucket, key, analysis):
             'processed_at': datetime.utcnow().isoformat()
         }
         
+        # CRITICAL: Convert all floats to Decimal for DynamoDB
+        item = convert_floats_to_decimal(item)
+        
         table.put_item(Item=item)
         
         print(f"✓ Metadata saved: {image_id}")

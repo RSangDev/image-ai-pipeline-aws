@@ -7,6 +7,7 @@ import json
 import boto3
 import os
 from boto3.dynamodb.conditions import Attr, Key
+from decimal import Decimal
 
 # AWS Clients
 dynamodb = boto3.resource('dynamodb')
@@ -22,6 +23,20 @@ CORS_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
 }
+
+
+def decimal_to_float(obj):
+    """
+    Recursively convert Decimal to float for JSON serialization
+    """
+    if isinstance(obj, list):
+        return [decimal_to_float(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: decimal_to_float(value) for key, value in obj.items()}
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
 
 
 def lambda_handler(event, context):
@@ -104,6 +119,9 @@ def handle_search(event):
         # Generate signed URLs for images
         results = []
         for item in items:
+            # Convert Decimal to float for JSON
+            item = decimal_to_float(item)
+            
             results.append({
                 'image_id': item['image_id'],
                 'url': generate_signed_url(item['bucket'], item['key']),
@@ -148,6 +166,9 @@ def handle_get_image(event):
         
         item = response['Item']
         
+        # Convert Decimal to float for JSON
+        item = decimal_to_float(item)
+        
         # Generate signed URL
         signed_url = generate_signed_url(item['bucket'], item['key'])
         
@@ -182,6 +203,9 @@ def handle_get_stats(event):
         # Scan all items (for small datasets)
         response = table.scan()
         items = response.get('Items', [])
+        
+        # Convert Decimal to float
+        items = [decimal_to_float(item) for item in items]
         
         # Calculate stats
         total_images = len(items)
